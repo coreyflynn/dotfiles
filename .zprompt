@@ -1,0 +1,142 @@
+setopt PROMPT_SUBST
+
+EMOJI=(💩 🐦 🚀 🐞 🎨 🍕 🐭 👽 ☕️ 🔬 💀 🐷 🐼 🐶 🐸 🐧 🐳 🍔 🍣 🍻 🔮 💰 💎 💾 💜 🍪 🌞 🌍 🐌 🐓 🍄 )
+
+function random_emoji {
+  # _emoji=$EMOJI[$RANDOM%$#EMOJI+1]
+    _emoji=" 🌊🥇"
+}
+
+function timestamp {
+  _timestamp=%D{%L:%M:%S}
+}
+
+# PROMPT='%(?..%B%F{red}exit %?%f%b'$'\n'')'\
+# '$(vcs_info && echo $vcs_info_msg_0_)'\
+# '%(!.%F{red}.%F{green})%~%f'\
+# '%(!.#.>) '
+# RPROMPT='${SSH_TTY:+%F{cyan\}#%n@%m%f}'
+
+PROMPT=''
+# exit code
+# http://zsh.sourceforge.net/Doc/Release/Prompt-Expansion.html#Conditional-Substrings-in-Prompts
+PROMPT+='%(?..%B%F{red}exit %?%f%b'$'\n'')'$'\n'
+PROMPT+='┌'
+# user @ hostname
+# http://zsh.sourceforge.net/Doc/Release/Prompt-Expansion.html#Shell-state
+#  PROMPT+='[%F{magenta}%n%f@%F{magenta}%m%f]'
+PROMPT+='${_emoji} '
+PROMPT+='-[%F{magenta}${_timestamp}%f]'
+PROMPT+='─[%F{blue}${_prompt_sorin_pwd}%f]─'
+# display number of files in current working directory
+PROMPT+='(%F{blue}$(f=(*(N)); print $#f) files%f)'
+PROMPT+=$'\n''└'
+# VCS info
+# http://zsh.sourceforge.net/Doc/Release/User-Contributions.html#Version-Control-Information
+PROMPT+='$vcs_info_msg_0_'
+# set terminator based on user privilege
+PROMPT+='%(!.🌩 .🌤 ) '
+
+# Right-hand Prompt
+RPROMPT='%B%F{green}node: $(if nvm &> /dev/null; then nvm current; else echo "n/a"; fi)%f%b'
+
+# Spellcheck Prompt
+SPROMPT="Correct %B%F{red}%R%f%b to %B%F{green}%r%f%b? (%F{yellow}y%fes, %F{yellow}n%fo, %F{yellow}a%fbort, %F{yellow}e%fdit) "
+
+autoload -Uz vcs_info
+zstyle ':vcs_info:*' enable bzr cvs git hg p4 svn
+zstyle ':vcs_info:*' check-for-changes true
+zstyle ':vcs_info:*' stagedstr      '%B%F{green}+%f%b'
+zstyle ':vcs_info:*' unstagedstr    '%B%F{yellow}!%f%b'
+zstyle ':vcs_info:*' nopatch-format ' %F{red}%c not patched%f'
+zstyle ':vcs_info:*' patch-format   ' %F{green}%n patched%f'
+zstyle ':vcs_info:*' formats        '%b%c%m' '%r'
+zstyle ':vcs_info:*' actionformats  '%b%c %B%F{yellow}%a%f%%b%m' '%r'
+# style when there is no vcs
+zstyle ':vcs_info:*' nvcsformats    ''
+zstyle ':vcs_info:git*+set-message:*' hooks git-untracked git-aheadbehind git-remotebranch
+add-zsh-hook precmd init
+
+function init() {
+  prompt_sorin_pwd
+  random_emoji
+  timestamp
+  vcs_info
+  if [[ -n $vcs_info_msg_1_ ]]; then
+    echo -ne "\e]0;${vcs_info_msg_1_}\007";
+  else
+    echo -ne "\e]0;${ITERM_PROFILE}\007"
+  fi
+}
+
+function prompt_sorin_pwd {
+  local pwd="${PWD/#$HOME/~}"
+
+  if [[ "$pwd" == (#m)[/~] ]]; then
+    _prompt_sorin_pwd="$MATCH"
+    unset MATCH
+  else
+    _prompt_sorin_pwd="${${${${(@j:/:M)${(@s:/:)pwd}##.#?}:h}%/}//\%/%%}/${${pwd:t}//\%/%%}"
+  fi
+}
+
+### git: Show marker if there are untracked files in repository
+# Make sure you have added staged to 'formats':  %c
+function +vi-git-untracked(){
+  if [[ $(git rev-parse --is-inside-work-tree 2> /dev/null) == 'true' ]] && \
+    git status --porcelain | fgrep '??' &> /dev/null ; then
+    # This will show the marker if there are any untracked files in repo.
+    # If instead you want to show the marker only if there are untracked
+    # files in $PWD, use:
+    #[[ -n $(git ls-files --others --exclude-standard) ]] ; then
+    hook_com[unstaged]+='%B%F{red}?%f%b'
+  fi
+
+  # iterate through all hook_com key,value
+  # for k in ${(@k)hook_com}; do
+  #   hook_com[unstaged]+="$k -> $hook_com[$k]; "
+  # done
+
+  # concatenate all flags
+  hook_com[staged]+=${hook_com[unstaged]}
+  if [[ -n $hook_com[staged] ]]; then
+    hook_com[staged]="─(${hook_com[staged]})"
+  fi
+}
+
+### git: Show +N/-N when your local branch is ahead-of or behind remote HEAD.
+# Make sure you have added misc to 'formats':  %m
+function +vi-git-aheadbehind() {
+  local leftright
+  local -a gitstatus
+
+  leftright=$(git rev-list --count --left-right 'HEAD...@{u}' 2> /dev/null)
+  leftright=(${(ps:\t:)leftright})
+  (( $leftright[1] )) && gitstatus+=( "%B%F{blue}+${leftright[1]}%f%b" )
+  (( $leftright[1] )) && (( $leftright[2] )) && gitstatus+='%F{magenta}/%f'
+  (( $leftright[2] )) && gitstatus+=( "%B%F{red}-${leftright[2]}%f%b" )
+
+  if [[ -n $gitstatus ]]; then
+    gitstatus+=' '
+  fi
+
+  hook_com[misc]+=" ${(j::)gitstatus}"
+}
+
+### git: Show remote branch name for remote-tracking branches
+# Make sure you have added staged to 'formats':  %b
+function +vi-git-remotebranch() {
+  local remote
+
+  # Are we on a remote-tracking branch?
+  remote=${$(git rev-parse --verify ${hook_com[branch]}@{upstream} \
+      --symbolic-full-name 2>/dev/null)/refs\/remotes\/}
+
+  remote_display=""
+  # only show the remote branch name if it differs from the local one.
+  # if [[ -n ${remote} && ${remote#*/} != ${hook_com[branch]} ]] ; then
+  if [[ -n ${remote} ]] ; then
+    remote_display=" > %F{green}${remote}%f"
+  fi
+  hook_com[branch]="[%F{yellow}${hook_com[branch]}%f$remote_display]"
+}
